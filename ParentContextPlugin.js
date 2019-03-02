@@ -19,6 +19,7 @@ const literalParser = node => {
 }
 
 const memberParser = node => {
+  if (!node) return
   if (node.type === 'Literal') return literalParser(node)
 
   const { object, property } = node
@@ -41,8 +42,9 @@ const expressionParser = (node, params, parser, source, options) => {
   const { range } = node
   const { type, callee } = node.expression
   const parsedCallee = memberParser(callee)
+  const calleeObject = parsedCallee && parsedCallee.split('.')[0]
 
-  if (type === 'CallExpression' && !options.ignoreCallees.includes(parsedCallee.split('.')[0]) && params) {
+  if (type === 'CallExpression' && !options.ignoreCallees.includes(calleeObject) && params) {
     const parentContext = generateParentContext(params, options.undefinedArgumentsBefore)
 
     let expressionSource = source.substring(range[0], range[1])
@@ -50,6 +52,10 @@ const expressionParser = (node, params, parser, source, options) => {
 
     const dep = new ConstDependency(`${expressionSource}`, range)
     dep.loc = node.loc
+    // addDependency is declared in DependenciesBlock
+    // Module extends DependenciesBlock
+    // dependencies then processed in JavascriptGenerator (render templates in Compilation before saving files)
+
     parser.state.current.addDependency(dep)
   }
 }
@@ -103,19 +109,36 @@ class ParentContextPlugin {
 
   apply(compiler) {
     compiler.hooks.compilation.tap(
-			'ParentContextPlugin',
+      this.constructor.name,
 			(compilation, { normalModuleFactory }) => {
-        console.log(this.options)
+        // defines how the JavascriptGenerator will treat the dependency
+        // ConstDependency Template replaces source code with the one from dep
+        //
+        // this exact code is not necessary - another webpack plugins will already
+        // have this factory and template added by this time
         compilation.dependencyFactories.set(ConstDependency, new NullFactory());
 				compilation.dependencyTemplates.set(
 					ConstDependency,
 					new ConstDependency.Template()
-				);
-        normalModuleFactory.hooks.parser.for('javascript/auto').tap('MyPlugin', (parser, options) => {
-          parser.hooks.program.tap('ParentContextPlugin', (ast, comments) => {
+        );
+
+        normalModuleFactory.hooks.parser.for('javascript/auto').tap(this.constructor.name, (parser, options) => {
+          // TODO: process errors
+          //
+          // parser.state.module.warnings.push(
+					// 	new CommentCompilationWarning(
+					// 		`Compilation error while processing magic comment(-s): /*${
+					// 			comment.value
+					// 		}*/: ${e.message}`,
+					// 		parser.state.module,
+					// 		comment.loc
+					// 	)
+					// );
+
+          parser.hooks.program.tap(this.constructor.name, (ast, comments) => {
             const originalSource = parser.state.current.originalSource()
             if (!originalSource) return
-            const source = originalSource._value
+            const source = originalSource.source()
             if (!source) return
 
             programParser(ast, undefined, parser, source, this.options)

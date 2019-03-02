@@ -1,3 +1,5 @@
+// TODO: comment1
+
 const IGNORED_BY_PCP = {
   showParentContext (name, args) {
     const lastArgument = args.length && args[args.length - 1]
@@ -14,6 +16,8 @@ function child(arg1, arg2, arg3) {
   IGNORED_BY_PCP.showParentContext('child', arguments)
   console.log('child end')
 }
+
+// FIXME: comment2
 
 function parent(arg1, arg2, arg3) {
   console.log('parent start')
