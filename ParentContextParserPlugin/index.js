@@ -21,31 +21,29 @@ class ParentContextParserPlugin {
   }
 
   apply(compiler) {
+    const pluginName = this.constructor.name
     // 1. handle unresolved require('__parentContext') by replacing
     //    it with require of the current file to prevent "Can't be resolved" errors
-    compiler.hooks.normalModuleFactory.tap(
-      this.constructor.name,
-      nmf => {
-        nmf.hooks.beforeResolve.tap(this.constructor.name, result => {
-          if (!result) return
-          if (result.request === '__parentContext') {
-            result.request = this.currentFileRelativePath
-          }
-          return result
-        })
-      }
-    )
+    compiler.hooks.normalModuleFactory.tap(pluginName, nmf => {
+      nmf.hooks.beforeResolve.tap(pluginName, result => {
+        if (!result) return
+        if (result.request === '__parentContext') {
+          result.request = this.currentFileRelativePath
+        }
+        return result
+      })
+    })
 
     // 2. once the AST is ready:
     //    a. pass caller params to every function call
     //    b. replace every call to require('__parentContext').get() with caller params
-    compiler.hooks.compilation.tap(this.constructor.name, (compilation, { normalModuleFactory }) => {
+    compiler.hooks.compilation.tap(pluginName, (compilation, { normalModuleFactory }) => {
       setDependencyTemplates(compilation)
 
-      normalModuleFactory.hooks.parser.for('javascript/auto').tap(this.constructor.name, parser => {
+      normalModuleFactory.hooks.parser.for('javascript/auto').tap(pluginName, parser => {
         this.parser = parser
 
-        parser.hooks.program.tap(this.constructor.name, ast => {
+        parser.hooks.program.tap(pluginName, ast => {
           // comments are available as the 2nd arg
           try {
             this.source = getSource(parser)
