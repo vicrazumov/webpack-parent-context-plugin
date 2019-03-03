@@ -1,4 +1,4 @@
-const path = require('path');
+const path = require('path')
 const ParentContextParserPlugin = require('./ParentContextParserPlugin')
 
 module.exports = {
@@ -12,4 +12,4 @@ module.exports = {
     filename: 'main.js',
     path: path.resolve(__dirname, 'dist')
   }
-};
+}

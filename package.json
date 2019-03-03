@@ -8,9 +8,9 @@
   },
   "author": "",
   "license": "ISC",
-  "dependencies": {
-  },
+  "dependencies": {},
   "devDependencies": {
+    "eslint": "^5.15.0",
     "webpack": "^4.29.5",
     "webpack-cli": "^3.2.3"
   }

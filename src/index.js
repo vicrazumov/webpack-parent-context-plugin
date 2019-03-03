@@ -1,3 +1,5 @@
+/* eslint-disable */
+
 const ParentContext = require('__parentContext')
 
 function child(arg1, arg2, arg3) {
