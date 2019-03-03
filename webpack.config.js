@@ -1,11 +1,10 @@
 const path = require('path');
-const ParentContextPlugin = require('./ParentContextPlugin')
+const ParentContextParserPlugin = require('./ParentContextParserPlugin')
 
 module.exports = {
   mode: 'production',
   plugins: [
-    new ParentContextPlugin({
-      undefinedArgumentsBefore: 0,
+    new ParentContextParserPlugin({
       ignoreCallees: ['IGNORED_BY_PCP'],
     }),
   ],

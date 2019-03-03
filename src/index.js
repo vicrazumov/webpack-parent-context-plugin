@@ -1,33 +1,12 @@
-// TODO: comment1
-
-const IGNORED_BY_PCP = {
-  showParentContext (name, args) {
-    const lastArgument = args.length && args[args.length - 1]
-    if (lastArgument.__parentContext) {
-      console.warn(`${name} received parentContext`, lastArgument)
-    } else {
-      console.warn(args)
-    }
-  }
-}
+const ParentContext = require('__parentContext')
 
 function child(arg1, arg2, arg3) {
-  console.log('child start')
-  IGNORED_BY_PCP.showParentContext('child', arguments)
-  console.log('child end')
+  const parentContext = ParentContext.get()
+  console.log(parentContext) // should print { parg1: 'pp1', parg2: 'pp2' }
 }
 
-// FIXME: comment2
-
-function parent(arg1, arg2, arg3) {
-  console.log('parent start')
-  IGNORED_BY_PCP.showParentContext('parent', arguments)
+function parent(parg1, parg2) {
   child('abc', 'def', 'ghi')
-  console.log('parent end')
 }
 
-const arrow = (arg1) => {
-  parent('parg1', 'parg2', { hello: 'hi' })
-}
-
-arrow('start')
+parent('pp1', 'pp2')
