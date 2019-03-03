@@ -1,43 +1,13 @@
 const ConstDependency = require('webpack/lib/dependencies/ConstDependency')
-const NullFactory = require('webpack/lib/NullFactory')
-const WebpackError = require('webpack/lib/WebpackError')
+const ParentContextParserPluginError = require('./ParentContextParserPluginError')
 
-const IGNORE_CALLEES = ['Array', 'console', 'Math', 'Object', 'JSON']
-
-const idParser = node => node ? `${node.name}` : 'null'
-
-const objPropertyParser = node => {
-  switch (node.type) {
-    case 'Identifier':
-      return idParser(node)
-    default:
-      return memberParser(node)
-  }
-}
-
-const literalParser = node => {
-  return node.value || '[Object]'
-}
-
-const memberParser = node => {
-  if (!node) return
-  if (node.type === 'Literal') return literalParser(node)
-
-  const { object, property } = node
-  if (!object) return idParser(node)
-
-  let parsedObject = objPropertyParser(object)
-  let parsedProperty = objPropertyParser(property)
-
-  return `${parsedObject}.${parsedProperty}`
-}
-
-const generateParentContext = (params, undefinedArgumentsBefore = 4) => {
-  const filling = new Array(undefinedArgumentsBefore).fill('undefined').join(',')
-  const wrappedFilling = filling ? `${filling},` : ''
-
-  return `,${wrappedFilling}{ __parentContext: { ${params.join(', ')} } })`
-}
+const {
+  IGNORE_CALLEES,
+  setDependencyTemplates,
+  idParser,
+  memberParser,
+  generateParentContext,
+} = require('./helpers')
 
 class ParentContextParserPlugin {
   constructor(options) {
@@ -51,34 +21,26 @@ class ParentContextParserPlugin {
     // handle unresolved require('__parentContext') by replacing
     // it with require of the current file
     compiler.hooks.normalModuleFactory.tap(
-			this.constructor.name,
-			nmf => {
-				nmf.hooks.beforeResolve.tap(this.constructor.name, result => {
-					if (!result) return;
-					if (result.request === '__parentContext') {
+      this.constructor.name,
+      nmf => {
+        nmf.hooks.beforeResolve.tap(this.constructor.name, result => {
+          if (!result) return
+          if (result.request === '__parentContext') {
             result.request = this.currentFileRelativePath
-					}
-					return result;
-				});
-			}
-		);
+          }
+          return result
+        })
+      }
+    )
 
     compiler.hooks.compilation.tap(this.constructor.name, (compilation, { normalModuleFactory }) => {
-      // defines how the JavascriptGenerator will treat the dependency
-      // ConstDependency Template replaces source code with the one from dep
-      //
-      // this exact code is not necessary - another webpack plugins will already
-      // have this factory and template added by this time
-      compilation.dependencyFactories.set(ConstDependency, new NullFactory())
-      compilation.dependencyTemplates.set(
-        ConstDependency,
-        new ConstDependency.Template()
-      )
+      setDependencyTemplates(compilation)
 
-      normalModuleFactory.hooks.parser.for('javascript/auto').tap(this.constructor.name, (parser, options) => {
+      normalModuleFactory.hooks.parser.for('javascript/auto').tap(this.constructor.name, parser => {
         this.parser = parser
 
-        parser.hooks.program.tap(this.constructor.name, (ast, comments) => {
+        parser.hooks.program.tap(this.constructor.name, ast => {
+          // comments are available as the 2nd arg
           try {
             const { current } = parser.state
             this.source = current.originalSource().source()
@@ -175,17 +137,6 @@ class ParentContextParserPlugin {
       this.parser.state.current.addDependency(dep)
     }
   }
-}
-
-class ParentContextParserPluginError extends WebpackError {
-	constructor(message) {
-		super()
-
-		this.name = 'ParentContextParserPlugin'
-		this.message = message
-
-		Error.captureStackTrace(this, this.constructor)
-	}
 }
 
 module.exports = ParentContextParserPlugin
