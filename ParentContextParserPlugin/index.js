@@ -5,21 +5,24 @@ const {
   IGNORE_CALLEES,
   setDependencyTemplates,
   idParser,
-  memberParser,
+  calleeParser,
   generateParentContext,
+  getSource,
+  getCurrentFileRelativePath,
 } = require('./helpers')
 
 class ParentContextParserPlugin {
   constructor(options) {
     const { ignoreCallees = [] } = options
     this.options = {
+      // callees to ignore, e.g., JSON, Object, etc
       ignoreCallees: [...ignoreCallees, ...IGNORE_CALLEES],
     }
   }
 
   apply(compiler) {
-    // handle unresolved require('__parentContext') by replacing
-    // it with require of the current file
+    // 1. handle unresolved require('__parentContext') by replacing
+    //    it with require of the current file to prevent "Can't be resolved" errors
     compiler.hooks.normalModuleFactory.tap(
       this.constructor.name,
       nmf => {
@@ -33,6 +36,9 @@ class ParentContextParserPlugin {
       }
     )
 
+    // 2. once the AST is ready:
+    //    a. pass caller params to every function call
+    //    b. replace every call to require('__parentContext').get() with caller params
     compiler.hooks.compilation.tap(this.constructor.name, (compilation, { normalModuleFactory }) => {
       setDependencyTemplates(compilation)
 
@@ -42,9 +48,8 @@ class ParentContextParserPlugin {
         parser.hooks.program.tap(this.constructor.name, ast => {
           // comments are available as the 2nd arg
           try {
-            const { current } = parser.state
-            this.source = current.originalSource().source()
-            this.currentFileRelativePath = current.userRequest.replace(current.context, '.')
+            this.source = getSource(parser)
+            this.currentFileRelativePath = getCurrentFileRelativePath(parser)
             this._walkBlock(ast)
           } catch (err) {
             parser.state.current.errors.push(
@@ -81,18 +86,17 @@ class ParentContextParserPlugin {
     if (init.type !== 'CallExpression') return
 
     const { arguments: args, callee } = init
-    const parsedCallee = memberParser(callee)
 
-    // calleeObject is either 'ParentContext' in 'ParentContext.get()'
+    // parsedCallee is either 'ParentContext' in 'ParentContext.get()'
     // or 'require' in 'require(...)'
-    const calleeObject = parsedCallee && parsedCallee.split('.')[0]
+    const parsedCallee = calleeParser(callee)
+    const variableId = idParser(id)
 
-    const parsedId = idParser(id)
-    switch (calleeObject) {
+    switch (parsedCallee) {
       // get the variable name for require('__parentContext')
       case 'require': {
         if (args[0].value === '__parentContext') {
-          this.contextGetterVarName = parsedId
+          this.contextGetterVarName = variableId
         }
         return
       }
@@ -100,7 +104,7 @@ class ParentContextParserPlugin {
       // in the previous case clause with the parent context
       // inserted as the last argument
       case this.contextGetterVarName: {
-        const dep = new ConstDependency(`${kind} ${parsedId} = arguments.length && arguments[arguments.length - 1].__parentContext`, range)
+        const dep = new ConstDependency(`${kind} ${variableId} = arguments.length && arguments[arguments.length - 1].__parentContext`, range)
         dep.loc = loc
         this.parser.state.current.addDependency(dep)
         return
@@ -112,30 +116,36 @@ class ParentContextParserPlugin {
   _walkExpressionStatement(node, params) {
     const { range, loc } = node
     const { type, callee } = node.expression
-    if (type !== 'CallExpression' || !params) return
+    if (type !== 'CallExpression' || !params || this._isIgnored(callee)) return
 
-    const parsedCallee = memberParser(callee)
-    const calleeObject = parsedCallee && parsedCallee.split('.')[0]
+    // wrap params from the parent function in
+    // `, { __parentContext: { param1, param2 } })`
+    const parentContext = generateParentContext(params)
 
+    // insert the parent context as the last
+    // argument in the child call expression
+    let expressionSource = this._getExpressionSource(range)
+    expressionSource = expressionSource.substring(0, expressionSource.length - 1).concat(parentContext)
+
+    // addDependency is declared in DependenciesBlock
+    // Module extends DependenciesBlock
+    // dependencies then processed in JavascriptGenerator
+    //(render templates in Compilation before saving files)
+    const dep = new ConstDependency(`${expressionSource}`, range)
+    dep.loc = loc
+    this.parser.state.current.addDependency(dep)
+  }
+
+  _isIgnored(callee) {
     // ignore some callees, e.g., JSON, Object, etc
     // together with the ones from the options
-    if (!this.options.ignoreCallees.includes(calleeObject)) {
-      // wrap params from the parent function
-      const parentContext = generateParentContext(params)
+    const parsedCallee = calleeParser(callee)
 
-      // insert the object with parent params as the last argument
-      // in the child call expression
-      let expressionSource = this.source.substring(range[0], range[1])
-      expressionSource = expressionSource.substring(0, expressionSource.length - 1).concat(parentContext)
+    return this.options.ignoreCallees.includes(parsedCallee)
+  }
 
-      // addDependency is declared in DependenciesBlock
-      // Module extends DependenciesBlock
-      // dependencies then processed in JavascriptGenerator
-      //(render templates in Compilation before saving files)
-      const dep = new ConstDependency(`${expressionSource}`, range)
-      dep.loc = loc
-      this.parser.state.current.addDependency(dep)
-    }
+  _getExpressionSource(range) {
+    return this.source.substring(range[0], range[1])
   }
 }
 

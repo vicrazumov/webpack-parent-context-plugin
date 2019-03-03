@@ -31,6 +31,14 @@ const memberParser = node => {
   return `${parsedObject}.${parsedProperty}`
 }
 
+const calleeParser = callee => {
+  const parsedCallee = memberParser(callee)
+
+  // calleeObject is either 'ParentContext' in 'ParentContext.get()'
+  // or 'require' in 'require(...)'
+  return parsedCallee && parsedCallee.split('.')[0]
+}
+
 const generateParentContext = (params, undefinedArgumentsBefore = 4) => {
   const filling = new Array(undefinedArgumentsBefore).fill('undefined').join(',')
   const wrappedFilling = filling ? `${filling},` : ''
@@ -51,10 +59,15 @@ const setDependencyTemplates = compilation => {
   )
 }
 
+const getSource = parser => parser.state.current.originalSource().source()
+const getCurrentFileRelativePath = parser => parser.state.current.userRequest.replace(parser.state.current.context, '.')
+
 module.exports = {
   IGNORE_CALLEES,
   setDependencyTemplates,
   idParser,
-  memberParser,
+  calleeParser,
   generateParentContext,
+  getSource,
+  getCurrentFileRelativePath,
 }
